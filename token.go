@@ -16,6 +16,7 @@ package iam
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -214,8 +215,7 @@ func (client *DefaultClient) clientTokenGrant(rootSpan opentracing.Span) (time.D
 
 	form := url.Values{}
 	form.Add("grant_type", "client_credentials")
-
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(span.Context().(context.Context),
 		http.MethodPost,
 		client.config.BaseURL+grantPath,
 		bytes.NewBufferString(form.Encode()),
@@ -308,7 +308,7 @@ func (client *DefaultClient) clientDelegateTokenGrant(extendNamespace string, ro
 	form.Add("grant_type", "urn:ietf:params:oauth:grant-type:extend_client_credentials")
 	form.Add("extendNamespace", extendNamespace)
 
-	req, err := http.NewRequest(
+	req, err := http.NewRequestWithContext(
 		http.MethodPost,
 		client.config.BaseURL+grantPath,
 		bytes.NewBufferString(form.Encode()),

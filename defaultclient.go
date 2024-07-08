@@ -17,6 +17,7 @@ package iam
 import (
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bluele/gcache"
 	"io/ioutil"
@@ -31,6 +32,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/atomic"
 )
 
@@ -138,7 +140,7 @@ func NewDefaultClient(config *Config) *DefaultClient {
 		),
 		keys:         make(map[string]*rsa.PublicKey),
 		revokedUsers: make(map[string]time.Time),
-		httpClient:   &http.Client{},
+		httpClient:   &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)},
 	}
 	client.remoteTokenValidation = client.validateAccessToken
 	client.delegateTokenCache = gcache.New(1000).LRU().
@@ -152,7 +154,7 @@ func NewDefaultClient(config *Config) *DefaultClient {
 		LoaderExpireFunc(func(namespace interface{}) (interface{}, *time.Duration, error) {
 			namespaceCtx, err := client.getNamespaceContext(namespace.(string))
 			ttl := time.Hour
-			if err == ErrNamespaceNotFound {
+			if errors.Is(err, ErrNamespaceNotFound) {
 				ttl = time.Minute * 3
 				// by this way, these not found namespace can still have a short time cache
 				return &NamespaceContext{NotFound: true}, &ttl, nil
