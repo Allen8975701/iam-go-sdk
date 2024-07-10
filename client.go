@@ -93,6 +93,9 @@ type Client interface {
 	// GetRolePermissions gets permissions of a role
 	GetRolePermissions(roleID string, opts ...Option) (perms []Permission, err error)
 
+	// GetRolePermissions gets permissions of a role in a specific namespace
+	GetRoleNamespacePermissions(namespace string, roleID string, opts ...Option) (perms []Permission, err error)
+
 	// GetClientInformation gets IAM client information,
 	// it will look into cache first, if not found then fetch it to IAM.
 	GetClientInformation(namespace string, clientID string, opts ...Option) (*ClientInformation, error)

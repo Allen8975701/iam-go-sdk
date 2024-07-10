@@ -61,6 +61,8 @@ const (
 	scopeSeparator       = " "
 
 	defaultBasicServiceBaseURI = "http://justice-basic-service/basic"
+
+	queryTargetNamespace = "targetNamespace"
 )
 
 // Config contains IAM configurations
@@ -444,7 +446,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 					reqSpan := jaeger.StartChildSpan(span, "client.ValidatePermission.Retry")
 					defer jaeger.Finish(reqSpan)
 
-					grantedRolePermissions, e = client.getRolePermission(namespaceRole.RoleID, span)
+					grantedRolePermissions, e = client.getRolePermission(namespaceRole.Namespace, namespaceRole.RoleID, span)
 					if e != nil {
 						switch errors.Cause(e) {
 						case errRoleNotFound:
@@ -493,7 +495,7 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 					reqSpan := jaeger.StartChildSpan(span, "client.ValidatePermission.Retry")
 					defer jaeger.Finish(reqSpan)
 
-					grantedRolePermissions, e = client.getRolePermission(roleID, span)
+					grantedRolePermissions, e = client.getRolePermission("", roleID, span)
 					if e != nil {
 						switch errors.Cause(e) {
 						case errRoleNotFound:
@@ -770,6 +772,51 @@ func (client *DefaultClient) GetRolePermissions(roleID string, opts ...Option) (
 		err = logAndReturnErr(
 			errors.WithMessage(err,
 				"GetRolePermissions: unable to get role perms"))
+		jaeger.TraceError(span, err)
+
+		return []Permission{}, err
+	}
+
+	return perms, err
+}
+
+// GetRolePermissions gets permissions of a role in a namespace
+func (client *DefaultClient) GetRoleNamespacePermissions(namespace, roleID string, opts ...Option) (perms []Permission, err error) {
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.GetRoleNamespacePermissions")
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+
+	err = backoff.
+		Retry(
+			func() error {
+				var e error
+
+				reqSpan := jaeger.StartChildSpan(span, "client.GetRoleNamespacePermissions.Retry")
+				defer jaeger.Finish(reqSpan)
+
+				perms, e = client.getRolePermission(namespace, roleID, span)
+				if e != nil {
+					switch errors.Cause(e) {
+					case errRoleNotFound:
+						return nil
+					case errUnauthorized:
+						_, _ = client.refreshAccessToken(reqSpan)
+						return e
+					}
+
+					return backoff.Permanent(e)
+				}
+
+				return nil
+			},
+			b,
+		)
+	if err != nil {
+		err = logAndReturnErr(
+			errors.WithMessage(err,
+				"GetRoleNamespacePermissions: unable to get role perms"))
 		jaeger.TraceError(span, err)
 
 		return []Permission{}, err

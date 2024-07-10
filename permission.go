@@ -150,7 +150,7 @@ func (client *DefaultClient) actionAllowed(grantedAction int, requiredAction int
 }
 
 // nolint: funlen, dupl
-func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentracing.Span) ([]Permission, error) {
+func (client *DefaultClient) getRolePermission(namespace, roleID string, rootSpan opentracing.Span) ([]Permission, error) {
 	span := jaeger.StartChildSpan(rootSpan, "client.getRolePermission")
 	defer jaeger.Finish(span)
 
@@ -166,6 +166,9 @@ func (client *DefaultClient) getRolePermission(roleID string, rootSpan opentraci
 		return nil, errors.Wrap(err, "getRolePermission: unable to create new HTTP request")
 	}
 
+	if len(namespace) > 0 {
+		req.URL.Query().Add(queryTargetNamespace, namespace)
+	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+client.clientAccessToken.Load())
 
