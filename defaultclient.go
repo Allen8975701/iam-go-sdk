@@ -601,7 +601,6 @@ func (client *DefaultClient) ValidatePermissionV2(claims *JWTClaims,
 
 						return backoff.Permanent(e)
 					}
-					allPermission = append(allPermission, grantedRolePermissions...)
 					return nil
 				},
 				b,
@@ -614,9 +613,9 @@ func (client *DefaultClient) ValidatePermissionV2(claims *JWTClaims,
 
 			return false, allPermission, err
 		}
-
 		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims,
 			namespaceRole.Namespace)
+		allPermission = append(allPermission, grantedRolePermissions...)
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
 			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
 			log("ValidatePermission: permission allowed to access resource")
@@ -647,10 +646,8 @@ func (client *DefaultClient) ValidatePermissionV2(claims *JWTClaims,
 							_, _ = client.refreshAccessToken(reqSpan)
 							return e
 						}
-
 						return backoff.Permanent(e)
 					}
-					allPermission = append(allPermission, grantedRolePermissions...)
 					return nil
 				},
 				b,
@@ -665,10 +662,10 @@ func (client *DefaultClient) ValidatePermissionV2(claims *JWTClaims,
 		}
 
 		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims, "")
+		allPermission = append(allPermission, grantedRolePermissions...)
 		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
 			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
 			log("ValidatePermission: permission allowed to access resource")
-
 			return true, allPermission, nil
 		}
 	}
