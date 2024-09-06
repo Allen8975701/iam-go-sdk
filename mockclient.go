@@ -124,6 +124,15 @@ func (client *MockClient) ValidatePermission(claims *JWTClaims,
 	return true, nil
 }
 
+func (client *MockClient) ValidatePermissionV2(claims *JWTClaims,
+	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, []Permission, error) {
+	if claims.Permissions[0].Resource == MockForbidden {
+		return false, []Permission{}, nil
+	}
+
+	return true, []Permission{}, nil
+}
+
 // ValidateRole validates if an access token has a specific role
 func (client *MockClient) ValidateRole(requiredRoleID string, claims *JWTClaims, opts ...Option) (bool, error) {
 	if claims.Roles[0] == MockForbidden {

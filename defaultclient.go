@@ -552,6 +552,133 @@ func (client *DefaultClient) ValidatePermission(claims *JWTClaims,
 	return false, nil
 }
 
+func (client *DefaultClient) ValidatePermissionV2(claims *JWTClaims,
+	requiredPermission Permission, permissionResources map[string]string, opts ...Option) (bool, []Permission, error) {
+	options := processOptions(opts)
+	span, _ := jaeger.StartSpanFromContext(options.jaegerCtx, "client.ValidateAccessToken")
+
+	defer jaeger.Finish(span)
+
+	if claims == nil {
+		log("ValidatePermission: claim is nil")
+		return false, []Permission{}, nil
+	}
+
+	for placeholder, value := range permissionResources {
+		requiredPermission.Resource = strings.Replace(requiredPermission.Resource, placeholder, value, 1)
+	}
+	targetNamespace, _ := permissionResources["{namespace}"]
+
+	if client.permissionAllowed(claims.Permissions, requiredPermission) {
+		log("ValidatePermission: permission allowed to access resource")
+		return true, []Permission{}, nil
+	}
+
+	b := backoff.NewExponentialBackOff()
+	b.MaxElapsedTime = maxBackOffTime
+	allPermission := make([]Permission, 0)
+	for _, namespaceRole := range claims.NamespaceRoles {
+		namespaceRole := namespaceRole
+		grantedRolePermissions := make([]Permission, 0)
+
+		err := backoff.
+			Retry(
+				func() error {
+					var e error
+
+					reqSpan := jaeger.StartChildSpan(span, "client.ValidatePermission.Retry")
+					defer jaeger.Finish(reqSpan)
+
+					grantedRolePermissions, e = client.GetRoleNamespacePermission(namespaceRole.Namespace, namespaceRole.RoleID, targetNamespace, span)
+					if e != nil {
+						switch errors.Cause(e) {
+						case errRoleNotFound:
+							return nil
+						case errUnauthorized:
+							_, _ = client.refreshAccessToken(reqSpan)
+							return e
+						}
+
+						return backoff.Permanent(e)
+					}
+					allPermission = append(allPermission, grantedRolePermissions...)
+					return nil
+				},
+				b,
+			)
+		if err != nil {
+			err = logAndReturnErr(
+				errors.WithMessage(err,
+					"ValidatePermission: unable to get role perms"))
+			jaeger.TraceError(span, err)
+
+			return false, allPermission, err
+		}
+
+		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims,
+			namespaceRole.Namespace)
+		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
+			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
+			log("ValidatePermission: permission allowed to access resource")
+
+			return true, allPermission, nil
+		}
+	}
+
+	// will remove permissions checking using roles once namespace role has fully used
+	for _, roleID := range claims.Roles {
+		roleID := roleID
+
+		grantedRolePermissions := make([]Permission, 0)
+		err := backoff.
+			Retry(
+				func() error {
+					var e error
+
+					reqSpan := jaeger.StartChildSpan(span, "client.ValidatePermission.Retry")
+					defer jaeger.Finish(reqSpan)
+
+					grantedRolePermissions, e = client.getRolePermission(roleID, span)
+					if e != nil {
+						switch errors.Cause(e) {
+						case errRoleNotFound:
+							return nil
+						case errUnauthorized:
+							_, _ = client.refreshAccessToken(reqSpan)
+							return e
+						}
+
+						return backoff.Permanent(e)
+					}
+					allPermission = append(allPermission, grantedRolePermissions...)
+					return nil
+				},
+				b,
+			)
+		if err != nil {
+			err = logAndReturnErr(
+				errors.WithMessage(err,
+					"ValidatePermission: unable to get role perms"))
+			jaeger.TraceError(span, err)
+
+			return false, allPermission, err
+		}
+
+		grantedRolePermissions = client.applyUserPermissionResourceValues(grantedRolePermissions, claims, "")
+		if client.permissionAllowed(grantedRolePermissions, requiredPermission) {
+			jaeger.AddLog(span, "msg", "ValidatePermission: permission allowed to access resource")
+			log("ValidatePermission: permission allowed to access resource")
+
+			return true, allPermission, nil
+		}
+	}
+
+	jaeger.AddLog(span, "msg", "ValidatePermission: permission not allowed to access resource")
+	log("ValidatePermission: permission not allowed to access resource")
+
+	return false, allPermission, nil
+}
+
 // ValidateRole validates if an access token has a specific role
 func (client *DefaultClient) ValidateRole(requiredRoleID string, claims *JWTClaims, opts ...Option) (bool, error) {
 	options := processOptions(opts)

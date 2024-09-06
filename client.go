@@ -66,6 +66,9 @@ type Client interface {
 	ValidatePermission(claims *JWTClaims, requiredPermission Permission,
 		permissionResources map[string]string, opts ...Option) (bool, error)
 
+	ValidatePermissionV2(claims *JWTClaims, requiredPermission Permission,
+		permissionResources map[string]string, opts ...Option) (bool, []Permission, error)
+
 	// ValidateRole validates if an access token has a specific role
 	ValidateRole(requiredRoleID string, claims *JWTClaims, opts ...Option) (bool, error)
 
